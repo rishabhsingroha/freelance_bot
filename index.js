@@ -19,6 +19,9 @@ const activeTimers = new Map();
 // Store freelancer channel mappings
 const freelancerChannels = new Map();
 
+// Store user timer settings (persisted durations)
+const userTimerSettings = new Map();
+
 // Store main panel message ID and channel ID
 let mainPanelMessageId = null;
 let mainPanelChannelId = null;
@@ -176,6 +179,13 @@ client.on('interactionCreate', async interaction => {
         // Store the freelancer's private channel
         freelancerChannels.set(freelancer.id, privateChannel.id);
 
+        // Store the user's timer settings for future use
+        userTimerSettings.set(freelancer.id, {
+            hours: hours,
+            minutes: minutes,
+            totalDurationHours: hours + (minutes / 60)
+        });
+        
         // Create timer data
         const timerData = {
             endTime: Date.now() + (hours * 60 * 60 * 1000) + (minutes * 60 * 1000),
@@ -235,6 +245,18 @@ client.on('interactionCreate', async interaction => {
         });
     }
     
+    // Check if the user has an assigned timer or settings before proceeding
+    const userId = interaction.user.id;
+    const hasActiveTimer = activeTimers.has(userId);
+    const hasTimerSettings = userTimerSettings.has(userId);
+    
+    if (!hasActiveTimer && !hasTimerSettings) {
+        return interaction.reply({ 
+            content: 'You have not been assigned a timer yet. Please ask an administrator to assign you a timer.', 
+            ephemeral: true 
+        });
+    }
+    
     // Ensure all buttons work with both 'any' and user-specific IDs
     // This ensures compatibility with the main panel buttons
     
@@ -242,10 +264,32 @@ client.on('interactionCreate', async interaction => {
         // Handle start button click
         const userId = interaction.user.id;
         
-        // Get the timer data
-        const timerData = activeTimers.get(userId);
-        if (!timerData) {
+        // Check if user has an active timer or stored settings
+        let timerData = activeTimers.get(userId);
+        const userSettings = userTimerSettings.get(userId);
+        
+        if (!timerData && !userSettings) {
             return interaction.reply({ content: 'No timer found for you. Please ask an administrator to assign you a timer.', ephemeral: true });
+        }
+        
+        // If timer is completed but user has settings, create a new timer with the stored duration
+        if (!timerData && userSettings) {
+            const privateChannelId = freelancerChannels.get(userId);
+            if (!privateChannelId) {
+                return interaction.reply({ content: 'No private channel found for you. Please ask an administrator to reassign your timer.', ephemeral: true });
+            }
+            
+            // Create a new timer with the stored settings
+            timerData = {
+                endTime: Date.now() + (userSettings.hours * 60 * 60 * 1000) + (userSettings.minutes * 60 * 1000),
+                privateChannelId: privateChannelId,
+                reminderCount: 0,
+                lastReminderTime: null,
+                totalDurationHours: userSettings.totalDurationHours
+            };
+            
+            // Store the new timer
+            activeTimers.set(userId, timerData);
         }
 
         console.log(`Timer started by freelancer ${interaction.user.tag} (ID: ${userId})`);
@@ -275,7 +319,7 @@ client.on('interactionCreate', async interaction => {
         
         await interaction.reply({ 
             content: '⚡ Timer started! Good luck with your work! Check your private channel for details.', 
-            ephemeral: true 
+            ephemeral: true
         });
         
         // Update the main panel
