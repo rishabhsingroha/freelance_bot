@@ -235,6 +235,9 @@ client.on('interactionCreate', async interaction => {
         });
     }
     
+    // Ensure all buttons work with both 'any' and user-specific IDs
+    // This ensures compatibility with the main panel buttons
+    
     if (action === 'start') {
         // Handle start button click
         const userId = interaction.user.id;
