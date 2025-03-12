@@ -75,6 +75,24 @@ client.once('ready', async () => {
                     required: false
                 }
             ]
+        },
+        {
+            name: 'reassign',
+            description: 'Reassign a timer to a freelancer using their previously set duration',
+            options: [
+                {
+                    name: 'freelancer',
+                    description: 'The freelancer to reassign the timer to',
+                    type: 6, // USER type
+                    required: true
+                },
+                {
+                    name: 'private_channel',
+                    description: 'The private channel for the freelancer',
+                    type: 7, // CHANNEL type
+                    required: true
+                }
+            ]
         }
     ];
 
@@ -209,6 +227,72 @@ client.on('interactionCreate', async interaction => {
             try {
                 const mainChannel = await client.channels.fetch(mainPanelChannelId);
                 const mainMessage = await mainChannel.messages.fetch(mainPanelMessageId);
+                
+                // Update the panel with the new assignment
+                await updateMainPanel();
+                
+                // Set permissions for the freelancer in the main channel
+                await mainChannel.permissionOverwrites.create(freelancer, {
+                    SendMessages: false,
+                    ViewChannel: true
+                });
+            } catch (error) {
+                console.error('Error updating main panel:', error);
+            }
+        } else {
+            await interaction.followUp({ 
+                content: 'No main panel found. Please create one using the `/panel` command first.', 
+                ephemeral: true 
+            });
+        }
+    }
+    else if (interaction.commandName === 'reassign') {
+        // Check if user has admin permissions
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return interaction.reply({ content: 'You need administrator permissions to use this command.', ephemeral: true });
+        }
+
+        const freelancer = interaction.options.getUser('freelancer');
+        const privateChannel = interaction.options.getChannel('private_channel');
+
+        // Check if the user has stored timer settings
+        if (!userTimerSettings.has(freelancer.id)) {
+            return interaction.reply({ 
+                content: `No previous timer settings found for ${freelancer.toString()}. Please use the /assign command first to set a duration.`, 
+                ephemeral: true 
+            });
+        }
+
+        // Get the stored timer settings
+        const settings = userTimerSettings.get(freelancer.id);
+        const hours = settings.hours;
+        const minutes = settings.minutes;
+
+        // Store the freelancer's private channel
+        freelancerChannels.set(freelancer.id, privateChannel.id);
+        
+        // Create timer data using the stored settings
+        const timerData = {
+            endTime: Date.now() + (hours * 60 * 60 * 1000) + (minutes * 60 * 1000),
+            privateChannelId: privateChannel.id,
+            reminderCount: 0,
+            lastReminderTime: null,
+            totalDurationHours: settings.totalDurationHours
+        };
+
+        activeTimers.set(freelancer.id, timerData);
+
+        // Send confirmation message
+        let durationText = minutes > 0 ? `${hours} hours and ${minutes} minutes` : `${hours} hours`;
+        await interaction.reply({
+            content: `Timer reassigned to ${freelancer.toString()} for ${durationText}. Private channel: ${privateChannel.toString()}`,
+            ephemeral: true
+        });
+
+        // Update the main panel if it exists
+        if (mainPanelMessageId && mainPanelChannelId) {
+            try {
+                const mainChannel = await client.channels.fetch(mainPanelChannelId);
                 
                 // Update the panel with the new assignment
                 await updateMainPanel();
