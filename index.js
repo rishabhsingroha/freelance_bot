@@ -158,9 +158,10 @@ client.on('interactionCreate', async interaction => {
         mainPanelMessageId = panelMessage.id;
         mainPanelChannelId = channel.id;
         
-        // Start the countdown interval if not already running
+        // Start the countdown updates if not already running
         if (!countdownInterval) {
-            countdownInterval = setInterval(updateCountdowns, 10000); // Update every 10 seconds
+            countdownInterval = true;
+            updateCountdowns(); // Start the countdown updates
         }
 
         try {
@@ -417,12 +418,19 @@ async function updateMainPanel() {
             for (const [userId, timer] of activeTimers.entries()) {
                 try {
                     const user = await client.users.fetch(userId);
-                    const endTimestamp = Math.floor(timer.endTime / 1000);
-                    
-                    timerFields.push({
-                        name: `${user.username}'s Timer`,
-                        value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
-                    });
+                    // Only show timer information if the timer has been started
+                    if (timer.startTime) {
+                        const endTimestamp = Math.floor(timer.endTime / 1000);
+                        timerFields.push({
+                            name: `${user.username}'s Timer`,
+                            value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
+                        });
+                    } else {
+                        timerFields.push({
+                            name: `${user.username}'s Timer`,
+                            value: `⏱️ **Status:** Not started\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}\n💡 Click the Start Work button to begin`
+                        });
+                    }
                 } catch (error) {
                     console.error(`Error fetching user ${userId}:`, error);
                 }
@@ -525,6 +533,8 @@ function formatDuration(hours) {
 // Function to update all countdowns in the main panel
 function updateCountdowns() {
     updateMainPanel();
+    // Schedule next update in 1 second for smooth countdown
+    setTimeout(updateCountdowns, 1000);
 }
 // Reminder system
 setInterval(async () => {
