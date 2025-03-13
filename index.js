@@ -577,6 +577,11 @@ setInterval(async () => {
 
 // Helper function to determine if a reminder should be sent
 function shouldSendReminder(timer) {
+    // Don't send reminders if timer hasn't started yet
+    if (!timer.startTime) {
+        return false;
+    }
+
     const hoursSinceLastReminder = (Date.now() - timer.lastReminderTime) / (60 * 60 * 1000);
     
     // Calculate hours since expiration
@@ -584,6 +589,11 @@ function shouldSendReminder(timer) {
     
     console.log(`Checking if reminder should be sent - Hours since last reminder: ${hoursSinceLastReminder.toFixed(2)}, Hours since expiration: ${hoursSinceExpiration.toFixed(2)}, Reminder count: ${timer.reminderCount}`);
     
+    // Only send reminders if the timer has actually expired
+    if (Date.now() < timer.endTime) {
+        return false;
+    }
+
     if (timer.reminderCount === 0) {
         console.log('Sending first reminder immediately after expiration');
         return true; // First reminder immediately after expiration
