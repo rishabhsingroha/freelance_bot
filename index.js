@@ -417,11 +417,11 @@ async function updateMainPanel() {
             for (const [userId, timer] of activeTimers.entries()) {
                 try {
                     const user = await client.users.fetch(userId);
-                    const timeLeft = formatTimeLeft(timer.endTime - Date.now());
+                    const endTimestamp = Math.floor(timer.endTime / 1000);
                     
                     timerFields.push({
                         name: `${user.username}'s Timer`,
-                        value: `⏱️ **Time Remaining:** ${timeLeft}\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
+                        value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
                     });
                 } catch (error) {
                     console.error(`Error fetching user ${userId}:`, error);
@@ -505,24 +505,9 @@ function formatTimeLeft(milliseconds) {
         return '⏰ **EXPIRED**';
     }
     
-    const seconds = Math.floor(milliseconds / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    const remainingHours = hours % 24;
-    const remainingMinutes = minutes % 60;
-    const remainingSeconds = seconds % 60;
-    
-    let timeString = '';
-    
-    if (days > 0) {
-        timeString += `${days}d `;
-    }
-    
-    timeString += `${remainingHours.toString().padStart(2, '0')}:${remainingMinutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    
-    return timeString;
+    // Convert to Unix timestamp in seconds
+    const timestamp = Math.floor((Date.now() + milliseconds) / 1000);
+    return `⌛ Time Remaining: <t:${timestamp}:R>`;
 }
 
 // Helper function to format duration in hours
