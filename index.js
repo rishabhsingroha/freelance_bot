@@ -26,6 +26,10 @@ const userTimerSettings = new Map();
 let mainPanelMessageId = null;
 let mainPanelChannelId = null;
 
+// Store admin timer panel message ID and channel ID
+let adminPanelMessageId = null;
+let adminPanelChannelId = null;
+
 // Store interval for updating countdown timers
 let countdownInterval = null;
 
@@ -43,6 +47,18 @@ client.once('ready', async () => {
                     description: 'The channel to create the panel in (defaults to current channel)',
                     type: 7, // CHANNEL type
                     required: false
+                }
+            ]
+        },
+        {
+            name: 'adminpanel',
+            description: 'Create a private admin timer panel in the specified channel',
+            options: [
+                {
+                    name: 'channel',
+                    description: 'The private channel to create the admin panel in',
+                    type: 7, // CHANNEL type
+                    required: true
                 }
             ]
         },
@@ -97,7 +113,72 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
 
-    if (interaction.commandName === 'panel') {
+    if (interaction.commandName === 'adminpanel') {
+        // Check if user has admin permissions
+        if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+            return interaction.reply({ content: 'You need administrator permissions to use this command.', ephemeral: true });
+        }
+
+        const channel = interaction.options.getChannel('channel');
+        
+        // Set channel permissions for admin-only access
+        await channel.permissionOverwrites.create(interaction.guild.roles.everyone, {
+            ViewChannel: false
+        });
+        
+        await channel.permissionOverwrites.create(client.user.id, {
+            ViewChannel: true,
+            SendMessages: true
+        });
+
+        // Create the admin panel embed
+        const adminPanel = new EmbedBuilder()
+            .setTitle('🔒 Admin Timer Control Panel')
+            .setDescription('**Private Timer Information**\n\nThis panel shows detailed timer information for all freelancers.')
+            .setColor('#FF4B4B')
+            .setTimestamp()
+            .setFooter({ text: 'Admin Timer Panel' });
+
+        // Add timer information if available
+        if (activeTimers.size > 0) {
+            const timerFields = [];
+            for (const [userId, timer] of activeTimers.entries()) {
+                try {
+                    const user = await client.users.fetch(userId);
+                    if (timer.startTime) {
+                        const endTimestamp = Math.floor(timer.endTime / 1000);
+                        timerFields.push({
+                            name: `${user.username}'s Timer`,
+                            value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
+                        });
+                    } else {
+                        timerFields.push({
+                            name: `${user.username}'s Timer`,
+                            value: `⏱️ **Status:** Not started\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}\n💡 Waiting for freelancer to start`
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error fetching user ${userId}:`, error);
+                }
+            }
+            adminPanel.addFields(timerFields);
+        } else {
+            adminPanel.addFields({
+                name: '⏱️ Timer Information',
+                value: 'No active timers currently. Use `/assign` to assign timers to freelancers.'
+            });
+        }
+
+        // Send the admin panel and store its message ID and channel ID
+        const panelMessage = await channel.send({
+            embeds: [adminPanel]
+        });
+        
+        adminPanelMessageId = panelMessage.id;
+        adminPanelChannelId = channel.id;
+
+        await interaction.reply({ content: `Admin Timer Panel created in ${channel.toString()}!`, ephemeral: true });
+    } else if (interaction.commandName === 'panel') {
         // Check if user has admin permissions
         if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
             return interaction.reply({ content: 'You need administrator permissions to use this command.', ephemeral: true });
@@ -397,113 +478,124 @@ client.on('interactionCreate', async interaction => {
 });
 // Helper function to update the main panel with current timer information
 async function updateMainPanel() {
-    if (!mainPanelMessageId || !mainPanelChannelId) return;
-    
-    try {
-        const mainChannel = await client.channels.fetch(mainPanelChannelId);
-        const mainMessage = await mainChannel.messages.fetch(mainPanelMessageId);
-        
-        // Create the updated panel embed
-        const updatedPanel = new EmbedBuilder()
-            .setTitle('🕒 Work Timer Control Panel')
-            .setDescription('**Welcome to the Work Timer System**\n\nThis panel allows freelancers to manage their assigned work timers.')
-            .setColor('#4F6AFF')
-            .setTimestamp()
-            .setFooter({ text: 'Work Timer System' });
-        
-        // Add active timer information
-        if (activeTimers.size > 0) {
-            const timerFields = [];
+    // Update main panel if it exists
+    if (mainPanelMessageId && mainPanelChannelId) {
+        try {
+            const mainChannel = await client.channels.fetch(mainPanelChannelId);
+            const mainMessage = await mainChannel.messages.fetch(mainPanelMessageId);
             
-            for (const [userId, timer] of activeTimers.entries()) {
-                try {
-                    const user = await client.users.fetch(userId);
-                    // Only show timer information if the timer has been started
-                    if (timer.startTime) {
-                        const endTimestamp = Math.floor(timer.endTime / 1000);
-                        timerFields.push({
-                            name: `${user.username}'s Timer`,
-                            value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
-                        });
-                    } else {
-                        timerFields.push({
-                            name: `${user.username}'s Timer`,
-                            value: `⏱️ **Status:** Not started\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}\n💡 Click the Start Work button to begin`
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Error fetching user ${userId}:`, error);
-                }
+            // Create the updated panel embed without timer information
+            const updatedPanel = new EmbedBuilder()
+                .setTitle('🕒 Work Timer Control Panel')
+                .setDescription('**Welcome to the Work Timer System**\n\nThis panel allows freelancers to manage their assigned work timers.')
+                .setColor('#4F6AFF')
+                .setTimestamp()
+                .setFooter({ text: 'Work Timer System' })
+                .addFields({
+                    name: '📋 Instructions',
+                    value: '1. Admins assign timers using `/assign`\n2. Assigned freelancers can use the buttons below\n3. Timer information is available in the admin panel'
+                });
+
+            // Create stable buttons that work for all users
+            const components = [];
+            const hasRegisteredUsers = activeTimers.size > 0 || Array.from(userTimerSettings.keys()).length > 0;
+            
+            if (hasRegisteredUsers) {
+                const startButton = new ButtonBuilder()
+                    .setCustomId('start_any')
+                    .setLabel('Start Work')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('⚡');
+
+                const completeButton = new ButtonBuilder()
+                    .setCustomId('complete_any')
+                    .setLabel('Complete Work')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('✅');
+                    
+                const startRow = new ActionRowBuilder().addComponents(startButton);
+                const completeRow = new ActionRowBuilder().addComponents(completeButton);
+                components.push(startRow, completeRow);
+            } else {
+                const startButton = new ButtonBuilder()
+                    .setCustomId('start_unassigned')
+                    .setLabel('Start Work')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('⚡')
+                    .setDisabled(true);
+
+                const completeButton = new ButtonBuilder()
+                    .setCustomId('complete_unassigned')
+                    .setLabel('Complete Work')
+                    .setStyle(ButtonStyle.Primary)
+                    .setEmoji('✅')
+                    .setDisabled(true);
+                    
+                const startRow = new ActionRowBuilder().addComponents(startButton);
+                const completeRow = new ActionRowBuilder().addComponents(completeButton);
+                components.push(startRow, completeRow);
             }
-            
-            updatedPanel.addFields(timerFields);
-        } else {
-            updatedPanel.addFields({
-                name: '⏱️ Timer Information',
-                value: 'No active timers currently. Admins must assign timers to freelancers using the `/assign` command.'
+
+            await mainMessage.edit({
+                embeds: [updatedPanel],
+                components: components
             });
+        } catch (error) {
+            console.error('Error updating main panel:', error);
         }
-        
-        updatedPanel.addFields({
-            name: '📋 Instructions',
-            value: '1. Admins assign timers using `/assign`\n2. Assigned freelancers can use the buttons below\n3. Countdown timers will appear here when assigned'
-        });
-        
-        // Create stable buttons that work for all users
-        const components = [];
-        
-        // Check if there are any registered users (either with active timers or timer settings)
-        const hasRegisteredUsers = activeTimers.size > 0 || Array.from(userTimerSettings.keys()).length > 0;
-        
-        if (hasRegisteredUsers) {
-            // Create enabled buttons when users are registered
-            const startButton = new ButtonBuilder()
-                .setCustomId('start_any')
-                .setLabel('Start Work')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('⚡');
+    }
 
-            const completeButton = new ButtonBuilder()
-                .setCustomId('complete_any')
-                .setLabel('Complete Work')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('✅');
-                
-            // Create separate rows for each button for vertical layout
-            const startRow = new ActionRowBuilder().addComponents(startButton);
-            const completeRow = new ActionRowBuilder().addComponents(completeButton);
+    // Update admin panel if it exists
+    if (adminPanelMessageId && adminPanelChannelId) {
+        try {
+            const adminChannel = await client.channels.fetch(adminPanelChannelId);
+            const adminMessage = await adminChannel.messages.fetch(adminPanelMessageId);
             
-            components.push(startRow, completeRow);
-        } else {
-            // Create disabled buttons when no users are registered
-            const startButton = new ButtonBuilder()
-                .setCustomId('start_unassigned')
-                .setLabel('Start Work')
-                .setStyle(ButtonStyle.Success)
-                .setEmoji('⚡')
-                .setDisabled(true);
+            // Create the admin panel embed with timer information
+            const adminPanel = new EmbedBuilder()
+                .setTitle('🔒 Admin Timer Control Panel')
+                .setDescription('**Private Timer Information**\n\nThis panel shows detailed timer information for all freelancers.')
+                .setColor('#FF4B4B')
+                .setTimestamp()
+                .setFooter({ text: 'Admin Timer Panel' });
 
-            const completeButton = new ButtonBuilder()
-                .setCustomId('complete_unassigned')
-                .setLabel('Complete Work')
-                .setStyle(ButtonStyle.Primary)
-                .setEmoji('✅')
-                .setDisabled(true);
-                
-            // Create separate rows for each button for vertical layout
-            const startRow = new ActionRowBuilder().addComponents(startButton);
-            const completeRow = new ActionRowBuilder().addComponents(completeButton);
-            
-            components.push(startRow, completeRow);
+            // Add timer information if available
+            if (activeTimers.size > 0) {
+                const timerFields = [];
+                for (const [userId, timer] of activeTimers.entries()) {
+                    try {
+                        const user = await client.users.fetch(userId);
+                        if (timer.startTime) {
+                            const endTimestamp = Math.floor(timer.endTime / 1000);
+                            timerFields.push({
+                                name: `${user.username}'s Timer`,
+                                value: `⏱️ **Deadline:** <t:${endTimestamp}:F>\n⌛ **Live Countdown:** <t:${endTimestamp}:R>\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}`
+                            });
+                        } else {
+                            timerFields.push({
+                                name: `${user.username}'s Timer`,
+                                value: `⏱️ **Status:** Not started\n📅 **Total Duration:** ${formatDuration(timer.totalDurationHours)}\n💡 Waiting for freelancer to start`
+                            });
+                        }
+                    } catch (error) {
+                        console.error(`Error fetching user ${userId}:`, error);
+                    }
+                }
+                adminPanel.addFields(timerFields);
+            } else {
+                adminPanel.addFields({
+                    name: '⏱️ Timer Information',
+                    value: 'No active timers currently. Use `/assign` to assign timers to freelancers.'
+                });
+            }
+
+            // Update the admin panel message
+            await adminMessage.edit({
+                embeds: [adminPanel]
+            });
+        } catch (error) {
+            console.error('Error updating admin panel:', error);
         }
-        
-        // Update the main panel message
-        await mainMessage.edit({
-            embeds: [updatedPanel],
-            components: components
-        });
-    } catch (error) {
-        console.error('Error updating main panel:', error);
     }
 }
 
