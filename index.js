@@ -194,9 +194,11 @@ client.on('interactionCreate', async interaction => {
             totalDurationHours: hours + (minutes / 60)
         });
         
-        // Create timer data
+        // Create timer data with startTime set to null initially
         const timerData = {
-            endTime: Date.now() + (hours * 60 * 60 * 1000) + (minutes * 60 * 1000),
+            endTime: null,
+            startTime: null,
+            duration: (hours * 60 * 60 * 1000) + (minutes * 60 * 1000),
             privateChannelId: privateChannel.id,
             reminderCount: 0,
             lastReminderTime: null,
@@ -264,14 +266,20 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
         });
     }
-    
+        // Get the private channel ID for the user
+    const privateChannelId = freelancerChannels.get(userId);
+    if (!privateChannelId) {
+        return interaction.reply({ 
+            content: 'No private channel found for you. Please ask an administrator to assign you a timer.', 
+            ephemeral: true 
+        });
+    }
+
     // Ensure all buttons work with both 'any' and user-specific IDs
     // This ensures compatibility with the main panel buttons
     
     if (action === 'start') {
         // Handle start button click
-        const userId = interaction.user.id;
-        
         // Check if user has an active timer or stored settings
         let timerData = activeTimers.get(userId);
         const userSettings = userTimerSettings.get(userId);
@@ -289,7 +297,9 @@ client.on('interactionCreate', async interaction => {
             
             // Create a new timer with the stored settings
             timerData = {
-                endTime: Date.now() + (userSettings.hours * 60 * 60 * 1000) + (userSettings.minutes * 60 * 1000),
+                endTime: null,
+                startTime: null,
+                duration: (userSettings.hours * 60 * 60 * 1000) + (userSettings.minutes * 60 * 1000),
                 privateChannelId: privateChannelId,
                 reminderCount: 0,
                 lastReminderTime: null,
@@ -300,6 +310,12 @@ client.on('interactionCreate', async interaction => {
             activeTimers.set(userId, timerData);
         }
 
+        // Only set the start and end times when the Start button is clicked
+        if (!timerData.startTime) {
+            timerData.startTime = Date.now();
+            timerData.endTime = timerData.startTime + timerData.duration;
+            activeTimers.set(userId, timerData);
+        }
         console.log(`Timer started by freelancer ${interaction.user.tag} (ID: ${userId})`);
         
         // Send a message to the private channel
@@ -428,9 +444,11 @@ async function updateMainPanel() {
         // Create stable buttons that work for all users
         const components = [];
         
-        // Always create just two buttons regardless of how many users have timers
-        if (activeTimers.size > 0) {
-            // Create enabled buttons when timers are assigned
+        // Check if there are any registered users (either with active timers or timer settings)
+        const hasRegisteredUsers = activeTimers.size > 0 || Array.from(userTimerSettings.keys()).length > 0;
+        
+        if (hasRegisteredUsers) {
+            // Create enabled buttons when users are registered
             const startButton = new ButtonBuilder()
                 .setCustomId('start_any')
                 .setLabel('Start Work')
@@ -449,7 +467,7 @@ async function updateMainPanel() {
             
             components.push(startRow, completeRow);
         } else {
-            // Create disabled buttons when no timers are assigned
+            // Create disabled buttons when no users are registered
             const startButton = new ButtonBuilder()
                 .setCustomId('start_unassigned')
                 .setLabel('Start Work')
